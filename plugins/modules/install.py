@@ -10,12 +10,12 @@ module: macos_pkg
 
 short_description: Installer for MacOS PKG files
 
-version_added: "1.0.0"
+version_added: "1.0.1"
 
 description: This module can install or uninstall PKG files with support for DMG files.
 
 options:
-    url:
+    source:
         description:
             - URL or path string pointing to a PKG or DMG file to be installed
             - Note that this module will always only install the first PKG found inside of a DMG
@@ -75,7 +75,7 @@ version_installed:
     description: The version of the package installed
     returned: success
     type: str
-    sample: 7.22.3rev1
+    sample: "7.22.3rev1"
 '''
 
 from ansible.module_utils.basic import AnsibleModule
