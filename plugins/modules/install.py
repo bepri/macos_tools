@@ -10,7 +10,7 @@ module: macos_pkg
 
 short_description: Installer for MacOS PKG files
 
-version_added: "1.0.1"
+version_added: "1.0.2"
 
 description: This module can install or uninstall PKG files with support for DMG files.
 
@@ -39,6 +39,12 @@ options:
         description:
             - Whether or not to allow unsigned or otherwise untrusted packages to be installed
         default: False
+        type: bool
+    upgrade:
+        description:
+            - Whether or not to upgrade an existing installation.
+            - MacOS installer packages are highly unstandardized, which can lead to instances where a package installer's declared version actually differs from what the software will report as its version once installed. To cope with this, this option can be set to C(False) to avoid the confusion.
+        default: True
         type: bool
 
 author:
@@ -85,6 +91,7 @@ import os
 import shlex
 import plistlib
 import re
+import sys
 from pkg_resources import packaging
 # This doesn't seem to want to import directly but this works just fine to pull the parse function out
 parse_version = packaging.version.parse
@@ -129,15 +136,17 @@ def get_metadata(module, path: str) -> dict:
 
     return res
 
-def install(module, pkg_path: str, metadata: str) -> tuple[bool, str]:
+def install(module, pkg_path: str, metadata: str) -> int:
     if _is_installed(module, metadata):
+        if module.params['upgrade'] == False:
+            return 2
+        
         installed_ver = _run_with_output(module, f'pkgutil --pkg-info {metadata["id"]}')
         installed_ver = re.search(r'version: (.*)', installed_ver).group(1)
 
-        if parse_version(installed_ver) > parse_version(metadata['version']) and not module.params['force']:
-            return (False, 'Newer version already present')
+        if parse_version(installed_ver) >= parse_version(metadata['version']) and not module.params['force']:
+            return 1
         
-
     result = module.run_command(
         shlex.split(
             f'installer -pkg "{pkg_path}" ' + 
@@ -147,9 +156,9 @@ def install(module, pkg_path: str, metadata: str) -> tuple[bool, str]:
     )
 
     if result[0]:
-        return (False, 'Failed to install package')
+        module.exit_json(msg = result[1])
     
-    return (True, '')
+    return 0
 
 def main():
     module = AnsibleModule(
@@ -158,6 +167,8 @@ def main():
             location = dict(type = 'path'),
             type = dict(type = 'str', choices = [ 'pkg', 'dmg' ]),
             allow_untrusted = dict(type = 'bool', default = True),
+            force = dict(type = 'bool', default = False),
+            upgrade = dict(type = 'bool', default = True),
         ),
         supports_check_mode = True,
     )
@@ -190,9 +201,11 @@ def main():
 
     # If we're handed a DMG, mount it and find the first PKG in there
     if type == 'dmg' or _is_dmg(path):
-        module.run_command(shlex.split(f'hdiutil attach {path}'))
+        module.run_command(shlex.split(f'hdiutil attach "{path}"'))
         plist = module.run_command(shlex.split('hdiutil info -plist'))[1]
-        plist = plistlib.loads(bytes(plist))
+        plist = plistlib.loads(bytes(plist, encoding=sys.stdout.encoding))
+
+        mount_point = None
 
         # Find mounting point of the DMG
         for image in plist['images']:
@@ -220,10 +233,10 @@ def main():
     metadata = get_metadata(module, pkg_path)
 
     install_result = install(module, pkg_path, metadata)
-    if not install_result[0]:
-        module.fail_json(msg = install_result[1])
+    if install_result == 0:
+        result['changed'] = True
 
-    if _is_dmg(path):
+    if type == "dmg" or _is_dmg(path):
         module.run_command(shlex.split(f'hdiutil detach "{mount_point}"'))
 
     # clean up after ourselves if we downloaded an installer from a URL
