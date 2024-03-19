@@ -8,7 +8,7 @@ namespace: bepri
 name: macos_tools
 
 # The version of the collection. Must be compatible with semantic versioning
-version: 1.0.0
+version: 1.0.1
 
 # The path to the Markdown (.md) readme file. This path is relative to the root of the collection
 readme: README.md
@@ -48,4 +48,4 @@ issues: https://github.com/bepri/macos_tools/issues
 # artifact. A pattern is matched from the relative path of the file or directory of the collection directory. This
 # uses 'fnmatch' to match the files or directories. Some directories and files like 'galaxy.yml', '*.pyc', '*.retry',
 # and '.git' are always filtered. Mutually exclusive with 'manifest'
-build_ignore: [ 'ansible.cfg' ]
+build_ignore: [ 'ansible.cfg', '.gitignore' ]
