@@ -166,7 +166,7 @@ def main():
             source = dict(type = 'str', required = True),
             location = dict(type = 'path'),
             type = dict(type = 'str', choices = [ 'pkg', 'dmg' ]),
-            allow_untrusted = dict(type = 'bool', default = True),
+            allow_untrusted = dict(type = 'bool', default = False),
             force = dict(type = 'bool', default = False),
             upgrade = dict(type = 'bool', default = True),
         ),
