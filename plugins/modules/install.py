@@ -46,6 +46,16 @@ options:
             - MacOS installer packages are highly unstandardized, which can lead to instances where a package installer's declared version actually differs from what the software will report as its version once installed. To cope with this, this option can be set to C(False) to avoid the confusion.
         default: True
         type: bool
+    id:
+        description:
+            - The "com." name of the package to check for. Use this when the script returns a false positive on a program already being installed
+        type: str
+        notes: Use of this option requires use of O(ver) as well
+    ver:
+        description:
+            - The version of the package to be installed. This string can be initially determined by first installing the package on a test machine, then run "pkgutil --info $PKG_ID", substituting the ID from the O(id) parameter.
+        type: str
+        notes: Use of this option requires use of O(id) as wel.
 
 author:
     - Imani Pelton (@bepri)
@@ -120,6 +130,11 @@ def _is_installed(module, metadata) -> bool:
     return metadata['id'] in packages
 
 def get_metadata(module, path: str) -> dict:
+    if module.params['id']:
+        return {
+            'version': module.params['ver'],
+            'id': module.params['id'],
+        }
     res = {}
     try:
         metadata = _run_with_output(module, f'tar xOqf "{path}" "*PackageInfo$"')
@@ -169,7 +184,12 @@ def main():
             allow_untrusted = dict(type = 'bool', default = False),
             force = dict(type = 'bool', default = False),
             upgrade = dict(type = 'bool', default = True),
+            id = dict(type = 'str'),
+            ver = dict(type = 'str'),
         ),
+        required_together = [
+            ('id', 'ver')
+        ],
         supports_check_mode = True,
     )
 
@@ -227,8 +247,6 @@ def main():
                 module.fail_json(msg = f'Unable to locate any .pkg files in {path}')
     else:
         pkg_path = path
-
-    result['pkg_path'] = pkg_path
 
     metadata = get_metadata(module, pkg_path)
 
