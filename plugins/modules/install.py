@@ -106,13 +106,22 @@ from pkg_resources import packaging
 # This doesn't seem to want to import directly but this works just fine to pull the parse function out
 parse_version = packaging.version.parse
 
-def _validate_ext(module, url: str) -> str:
+def _validate_ext(module, path: str) -> str:
+    """Check that there is an appropriate file extension on a given file and return it.
+
+    Args:
+        module (Any): The Ansible module context
+        url (str): The path to validate
+
+    Returns:
+        str: _description_
+    """
     # isolate extension (if any)
-    if (suffix_pos := url.rfind('.')) == -1:
-        module.fail_json(msg = f'Unable to determine resulting filetype of {url}.\nTry using the "type" parameter.')
+    if (suffix_pos := path.rfind('.')) == -1:
+        module.fail_json(msg = f'Unable to determine resulting filetype of {path}.\nTry using the "type" parameter.')
 
     # check the extension
-    suffix = url[suffix_pos:]
+    suffix = path[suffix_pos:]
     if suffix not in [ '.pkg', '.dmg' ]:
         module.fail_json(msg = f'Unrecognized file extension: {suffix}.\nTry using the "type" parameter.')
 
@@ -130,6 +139,16 @@ def _is_installed(module, metadata) -> bool:
     return metadata['id'] in packages
 
 def get_metadata(module, path: str) -> dict:
+    """Return a metadata object describing the package to install
+
+    Args:
+        module (Any): Ansible module context
+        path (str): Path to package
+
+    Returns:
+        dict: A dict with two self-explanatory entries: "version" and "id"
+    """
+    # Handle if "id" and "ver" are set from the playbook
     if module.params['id']:
         return {
             'version': module.params['ver'],
@@ -137,11 +156,14 @@ def get_metadata(module, path: str) -> dict:
         }
     res = {}
     try:
+        # Filter the package's contents with tar to get the PackageInfo file
         metadata = _run_with_output(module, f'tar xOqf "{path}" "*PackageInfo$"')
         metadata = et.fromstring(metadata)
     except:
+        # Fail if we can't find the PackageInfo file
         module.fail_json(msg = f'Unable to find package properties in {path} - this usually is because the "PackageInfo" file does not exist in the PKG.')
 
+    # Get the package version
     bundle = metadata.find('bundle').attrib
     if not (ver := bundle.get('CFBundleVersion', None)):
         module.fail_json(msg = 'Package does not specify its version number - PKG may be invalid.')
@@ -152,16 +174,28 @@ def get_metadata(module, path: str) -> dict:
     return res
 
 def install(module, pkg_path: str, metadata: str) -> int:
+    """Install a package
+
+    Args:
+        module (Any): Ansible module context
+        pkg_path (str): Path to a local .pkg file
+        metadata (str): Metadata object from `get_metadata()`
+
+    Returns:
+        int: Success value. 2 means the program was already installed, 1 means it was already installed but an upgrade was not necessary either, 0 is success.
+    """
     if _is_installed(module, metadata):
+        # Skip if the user does not want to attempt upgrades
         if module.params['upgrade'] == False:
             return 2
         
+        # Test the installed version number against the one in the pkg file
         installed_ver = _run_with_output(module, f'pkgutil --pkg-info {metadata["id"]}')
         installed_ver = re.search(r'version: (.*)', installed_ver).group(1)
-
         if parse_version(installed_ver) >= parse_version(metadata['version']) and not module.params['force']:
             return 1
-        
+    
+    # Actual install command
     result = module.run_command(
         shlex.split(
             f'installer -pkg "{pkg_path}" ' + 
@@ -170,6 +204,7 @@ def install(module, pkg_path: str, metadata: str) -> int:
         )
     )
 
+    # Error out if the install result was nonzero, then pass stderr from the install command as an error message
     if result[0]:
         module.exit_json(msg = result[1])
     
